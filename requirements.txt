@@ -1,0 +1,5 @@
+fastapi
+uvicorn
+websockets
+g4f
+edge-tts
