@@ -31,30 +31,52 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     print("ESP32 Connected to Cloud Server!")
     
+    audio_buffer = b""
+    
     try:
         while True:
-            data = await websocket.receive_bytes()
-            
-            if len(data) == 0 or b"END_OF_SPEECH" in data:
-                print("Processing Audio on Cloud...")
-                user_text = "Hello, aap kaun ho?" 
+            try:
+                # 0.5 second tak wait karega, agar data nahi aaya toh timeout exception dega
+                data = await asyncio.wait_for(websocket.receive_bytes(), timeout=0.5)
                 
-                await websocket.send_json({"type": "stt", "text": user_text})
-                
-                ai_response = await ask_free_ai(user_text)
-                await websocket.send_json({"type": "tts", "state": "start", "text": ai_response})
-                
-                audio_response = await text_to_speech(ai_response)
-                
-                chunk_size = 1024
-                for i in range(0, len(audio_response), chunk_size):
-                    await websocket.send_bytes(audio_response[i:i+chunk_size])
-                    await asyncio.sleep(0.01)
+                if len(data) > 0:
+                    audio_buffer += data
+                    # Jab tak data aa raha hai, loop chalta rahega
                     
-                await websocket.send_json({"type": "tts", "state": "stop"})
-            else:
-                pass
-                
+            except asyncio.TimeoutError:
+                # 👉 BUTTON CHHODNE PAR TIMEOUT HOGA AUR YAHAN PROCESSING SHURU HOGI!
+                if len(audio_buffer) > 0:
+                    print("Processing Audio on Cloud...")
+                    
+                    # Abhi hum STT real mic se test karne ke liye temporary default text rakh rahe hain
+                    user_text = "Hello, aap kaun ho?" 
+                    
+                    # ESP32 ko batayenge ki transcribing khatam
+                    await websocket.send_json({"type": "stt", "text": user_text})
+                    
+                    # AI se jawab lenge
+                    ai_response = await ask_free_ai(user_text)
+                    print(f"AI Response: {ai_response}")
+                    
+                    # ESP32 ko 'start' bhejenge taaki Screen par 'Speaking...' aaye aur Amp ON ho
+                    # Sahi format: state key ko JSON ke andar standard tarike se bhejna
+                    await websocket.send_json({"state": "start", "text": ai_response})
+                    
+                    # Audio generate karenge
+                    audio_response = await text_to_speech(ai_response)
+                    
+                    # ESP32 ko audio data chunks bhejenge
+                    chunk_size = 1024
+                    for i in range(0, len(audio_response), chunk_size):
+                        await websocket.send_bytes(audio_response[i:i+chunk_size])
+                        await asyncio.sleep(0.01)
+                    
+                    # Bolna khatam hone par 'stop' state bhejenge (Amp OFF + Emoji Reset)
+                    await websocket.send_json({"state": "stop"})
+                    
+                    # Buffer ko khali kar denge agle command ke liye
+                    audio_buffer = b""
+                    
     except Exception as e:
         print(f"Disconnected: {e}")
     finally:
