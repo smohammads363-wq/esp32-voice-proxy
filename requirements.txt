@@ -1,5 +1,6 @@
 fastapi
 uvicorn
-websockets
-g4f
+google-genai
 edge-tts
+SpeechRecognition
+pydub
