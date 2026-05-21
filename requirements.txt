@@ -1,6 +1,4 @@
 fastapi
 uvicorn
-google-genai
+google-generativeai
 edge-tts
-SpeechRecognition
-pydub
